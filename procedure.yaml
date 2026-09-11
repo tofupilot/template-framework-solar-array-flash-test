@@ -1,0 +1,193 @@
+name: Solar Array Flash Test
+version: 0.1.0
+description: Electrical acceptance of a smallsat solar panel under a large-area pulsed solar simulator. Reference cell pulses for lamp intensity and repeatability, insulation resistance at 500 V and capacitance, one flash per string with the IV curve corrected to 25 C and 1 SC AM0, string match, every bypass diode's forward drop.
+
+unit:
+  auto_identify: true
+  serial_number:
+    description: "Scan the panel's substrate label"
+    placeholder: "SA-WING-000"
+    pattern: "^SA-WING-\\d{3}$"
+    default_value: "SA-WING-047"
+  part_number:
+    default_value: "SA-4S18-3G30"
+  batch_number:
+    default_value: "CELL-LOT-2026-19"
+
+plugs:
+  - name: Flash Bench
+    description: "Pulsed solar simulator with reference cell, IV load, megohmmeter, LCR meter, thermocouples (mock LAPSS II-class, one plug per bench)"
+    python: plugs.flash_bench:FlashBench
+    key: bench
+
+setup:
+  - name: Reference Check
+    key: reference_check
+    python: phases.reference_check
+    measurements:
+      - name: Pulse Repeatability
+        key: pulse_repeat_pct
+        unit: "%"
+        description: Spread of three reference-cell pulses; the flasher's own pulse-to-pulse figure is +-1 %.
+        validators:
+          - {operator: "<=", expected_value: 1.0}
+      - name: Lamp Intensity
+        key: lamp_intensity_sc
+        unit: SC
+        description: Solar constants delivered, from the reference cell; the correction handles 0.95 to 1.05, outside it the lamp is out of adjustment.
+        validators:
+          - {operator: ">=", expected_value: 0.95}
+          - {operator: "<=", expected_value: 1.05}
+      - name: Panel Temperature
+        key: panel_temp_c
+        unit: °C
+        validators:
+          - {operator: ">=", expected_value: 18.0}
+          - {operator: "<=", expected_value: 30.0}
+
+main:
+  - name: Health Check
+    key: health_check
+    python: phases.health_check
+    measurements:
+      - name: IR Circuit To Substrate
+        key: ir_circuit_substrate_mohm
+        unit: MΩ
+        description: 500 V DC, ECSS-E-ST-20-08 example value greater than 100 MOhm at ambient.
+        validators:
+          - {operator: ">=", expected_value: 100.0}
+      - name: IR Adjacent Strings
+        key: ir_adjacent_strings_mohm
+        unit: MΩ
+        validators:
+          - {operator: ">=", expected_value: 100.0}
+      - name: IR Sensor To Substrate
+        key: ir_sensor_substrate_mohm
+        unit: MΩ
+        validators:
+          - {operator: ">=", expected_value: 100.0}
+      - name: Capacitance
+        key: capacitance_nf
+        unit: nF
+        description: Panel capacitance as a dielectric health number; it moves when the substrate insulation is damaged.
+        validators:
+          - {operator: ">=", expected_value: 80.0}
+          - {operator: "<=", expected_value: 160.0}
+
+  - name: Flash IV
+    key: flash_iv
+    python: phases.flash_iv
+    depends_on: [health_check]
+    timeout: 5m
+    measurements:
+      - name: IV Curves
+        key: iv
+        title: String IV curves corrected to 25 °C, 1 SC AM0
+        x_axis:
+          legend: Voltage
+          unit: V
+        y_axis:
+          - legend: String 1
+            key: string_1
+            unit: A
+            aggregations:
+              - type: pmax_w
+                unit: W
+                validators:
+                  - {operator: ">=", expected_value: 20.0}
+              - type: isc_a
+                unit: A
+              - type: voc_v
+                unit: V
+              - type: fill_factor
+                validators:
+                  - {operator: ">=", expected_value: 0.80}
+          - legend: String 2
+            key: string_2
+            unit: A
+            aggregations:
+              - type: pmax_w
+                unit: W
+                validators:
+                  - {operator: ">=", expected_value: 20.0}
+              - type: isc_a
+                unit: A
+              - type: voc_v
+                unit: V
+              - type: fill_factor
+                validators:
+                  - {operator: ">=", expected_value: 0.80}
+          - legend: String 3
+            key: string_3
+            unit: A
+            aggregations:
+              - type: pmax_w
+                unit: W
+                validators:
+                  - {operator: ">=", expected_value: 20.0}
+              - type: isc_a
+                unit: A
+              - type: voc_v
+                unit: V
+              - type: fill_factor
+                validators:
+                  - {operator: ">=", expected_value: 0.80}
+          - legend: String 4
+            key: string_4
+            unit: A
+            aggregations:
+              - type: pmax_w
+                unit: W
+                validators:
+                  - {operator: ">=", expected_value: 20.0}
+              - type: isc_a
+                unit: A
+              - type: voc_v
+                unit: V
+              - type: fill_factor
+                validators:
+                  - {operator: ">=", expected_value: 0.80}
+      - name: Panel Pmax
+        key: panel_pmax_w
+        unit: W
+        validators:
+          - {operator: ">=", expected_value: 80.0}
+      - name: String Match
+        key: string_match_pct
+        unit: "%"
+        description: Spread of string Pmax over the mean; strings in one panel are graded to match and a mismatch is a cell at the wrong grade or a damaged one.
+        validators:
+          - {operator: "<=", expected_value: 3.0}
+
+  - name: Bypass Diodes
+    key: bypass_diodes
+    python: phases.bypass_diodes
+    depends_on: [flash_iv]
+    measurements:
+      - name: Diodes
+        key: diodes
+        title: Forward drop of every bypass diode at string current
+        x_axis:
+          legend: Diode
+        y_axis:
+          - legend: Vf
+            key: vf
+            unit: V
+            aggregations:
+              - type: max_v
+                unit: V
+                validators:
+                  - {operator: "<=", expected_value: 1.2}
+              - type: min_v
+                unit: V
+                validators:
+                  - {operator: ">=", expected_value: 0.5}
+
+teardown:
+  - name: Release
+    key: release
+    python: phases.release
+    measurements:
+      - name: Pulses This Run
+        key: pulses_this_run
+        description: Lamp pulses consumed, logged against the flash tube's life.
